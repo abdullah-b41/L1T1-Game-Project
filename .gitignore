@@ -1,0 +1,14 @@
+# Compiled binaries
+*.exe
+*.o
+*.obj
+*.out
+
+# Build output
+build/
+bin/
+
+# OS / editor cruft
+Thumbs.db
+Desktop.ini
+.DS_Store
