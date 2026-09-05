@@ -12,3 +12,6 @@ bin/
 Thumbs.db
 Desktop.ini
 .DS_Store
+
+# Backups
+*.bak
