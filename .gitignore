@@ -12,3 +12,26 @@ bin/
 Thumbs.db
 Desktop.ini
 .DS_Store
+
+# Source archives (extracted dirs are committed instead)
+*.zip
+*.7z
+*.rar
+*.tar.gz
+
+# Session/tooling state
+.remember/
+.cph/
+
+# Compiled binaries (macOS, no extension)
+ball-move
+ball-shoot
+level_1
+level_6
+mouse-correct
+images-loaded
+menu
+tempCodeRunnerFile
+golf levels/golf
+golf levels/level_02
+golf levels/menu

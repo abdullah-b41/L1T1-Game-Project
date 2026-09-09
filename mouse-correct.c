@@ -1,25 +1,33 @@
 #include "raylib.h"
 #include "raymath.h"
 
-#define width 800
-#define height 800
+#define screen_width 800
+#define screen_height 800
 
-int Playground_width = width / 2;
-int Playground_height = height * 3 / 4;
+int Playground_width = screen_width / 2;
+int Playground_height = screen_height * 3 / 4;
 
-Vector2 Playground_center = {width / 2, height / 2};
-Vector2 pot = {width / 2, height / 5};
-Vector2 ball = {width / 2, 3.8 * height / 5};
+Vector2 Playground_center = {screen_width / 2, screen_height / 2};
+Vector2 pot = {screen_width / 2, screen_height / 5};
+Vector2 ball = {screen_width / 2, 3.8 * screen_height / 5};
 Vector2 speed = {0, 0};
-Vector2 obstacle = {width / 2, height / 2};
-int radius_pot = height / 50;
-int radius_ball = height / 60;
+Vector2 obstacle = {screen_width / 2, screen_height / 2};
+
+int radius_pot = screen_height / 50;
+int radius_ball = screen_height / 60;
 int radius_obstackle = 25;
 
 int main()
 {
-    InitWindow(width, height, "practice");
+    InitWindow(screen_width, screen_height, "practice");
     SetTargetFPS(60);
+    InitAudioDevice();
+
+    Sound hitSound = LoadSound("assets/audio/jump.wav");
+    Texture2D ball_texture = LoadTexture("assets/ball-items/ball-blue.png");
+    Texture2D background = LoadTexture("assets/not-ball/background.png");
+    Texture2D playground = LoadTexture("assets/not-ball/playground.png");
+
     while (!WindowShouldClose())
     {
         // wall bounce
@@ -99,23 +107,37 @@ int main()
         // score
         if ((ball.x > pot.x - 3 * radius_pot / 4) && (ball.x < pot.x + 3 * radius_pot / 4) && (ball.y > pot.y - 3 * radius_pot / 4) && (ball.y < pot.y + 3 * radius_pot / 4))
         { // score
-            ball.x = width / 2;
-            ball.y = 4 * height / 5;
+            ball.x = screen_width / 2;
+            ball.y = 4 * screen_height / 5;
             speed.x = 0;
             speed.y = 0;
+            PlaySound(hitSound);
         }
 
         BeginDrawing();
         ClearBackground(SKYBLUE);
 
         Rectangle Playground = {(Playground_center.x - Playground_width / 2), (Playground_center.y - Playground_height / 2), Playground_width, Playground_height};
-        DrawRectangleRec(Playground, GetColor(0x00F000FF));
+        // DrawRectangleRec(Playground, GetColor(0x00F000FF));
+        DrawTexturePro(
+            background, (Rectangle){0, 0, background.width, background.height},
+            (Rectangle){0, 0, screen_width, screen_height},
+            Vector2Zero(), 0.0f, WHITE);
+
+        DrawTexturePro(
+            playground, (Rectangle){0, 0, playground.width, playground.height},
+            (Rectangle){Playground_center.x - Playground_width, Playground_center.y + Playground_height, Playground_width, Playground_height},
+            Vector2Zero(), 0.0f, WHITE);
+
         DrawCircle(pot.x, pot.y, radius_pot, BLACK);
-        DrawCircle(ball.x, ball.y, radius_ball, WHITE);
         DrawRectangleLinesEx(Playground, 5, BLACK);
-        DrawCircleLines(pot.x, pot.y, radius_pot + 1, YELLOW);
-        DrawCircleLines(ball.x, ball.y, radius_ball + 1, BLACK);
+        DrawCircleLines(pot.x, pot.y, radius_pot, YELLOW);
         DrawCircle(obstacle.x, obstacle.y, radius_obstackle, RED);
+
+        DrawTexturePro(
+            ball_texture, (Rectangle){0, 0, ball_texture.width, ball_texture.height},
+            (Rectangle){ball.x - radius_ball * 4, ball.y - radius_ball * 4, radius_ball * 8, radius_ball * 8},
+            Vector2Zero(), 0.0f, WHITE);
 
         // projection direction
         if (IsMouseButtonDown(MOUSE_BUTTON_LEFT) && speed.x == 0 && speed.y == 0)
@@ -133,9 +155,10 @@ int main()
                 DrawLineV(start, end, BLACK);
             }
         }
-
         EndDrawing();
     }
+    UnloadSound(hitSound);
+    CloseAudioDevice();
     CloseWindow();
 
     return 0;
