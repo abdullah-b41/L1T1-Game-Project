@@ -4796,7 +4796,7 @@ void l4_unload()
 int screen_width;
 int screen_height;
 float su = 1;
-int game_mode = 0;          //0 intro, 1 menu, 2 playing, 3 level briefing
+int game_mode = 0;          //0 intro, 1 menu, 2 playing, 3 briefing, 4 name, 5 how to play, 6 leaderboard, 7 credits
 int level = 1;
 int quit = 0;
 int brief_page = 0;
@@ -4812,6 +4812,189 @@ int card_turn = 0;
 int chosen_level = 0;       //0 picking a level, 1-4 picking the difficulty for that level
 Color card_colour[4] = {{232,185,35,255},{63,180,207,255},{190,90,255,255},{120,200,90,255}};
 const char *level_name[4] = {"FOUNDRY","SHORELINE","EVENT HORIZON","LOST TEMPLE"};
+
+
+//==================== THE PLAYER, THE SCORES AND THE SETTINGS ====================
+//scores.txt sits next to the game: one line per player, NAME|level1|level2|level3|level4
+//a level only writes a score when it is finished, and only when the score beats the old one
+#define MAX_PLAYERS 50
+char player_name[16] = "";
+int name_length = 0;
+int player_row = -1;              //which line of the table is this player, -1 = no line yet
+
+char score_name[MAX_PLAYERS][16];
+int score_points[MAX_PLAYERS][4];
+int score_count = 0;
+
+int sound_on = 1;              //the one switch for music AND sound effects
+int score_saved = 0;              //the score for this run has already been written
+int sound_press = 0;              //the speaker button is being held down, so no shot
+
+int score_rate[3] = {10,25,50};        //points for every stroke you did NOT use
+int score_bonus[3] = {100,250,500};    //for finishing the level at all
+
+
+//the same sum for every level: what is left over, times the difficulty, plus the bonus
+int score_for(int limit, int strokes, int difficulty)
+{
+    int left = limit - strokes;
+    if (left<0) left = 0;
+    return left*score_rate[difficulty] + score_bonus[difficulty];
+}
+
+
+int player_total(int row)
+{
+    int total = 0;
+    for (int i=0; i<4; i++) total = total + score_points[row][i];
+    return total;
+}
+
+
+//the level's own numbers, whichever level is being played
+int level_state()
+{
+    if (level==1) return l1_game_state;
+    if (level==2) return l2_game_state;
+    if (level==3) return l3_game_state;
+    return l4_game_state;
+}
+
+
+int level_strokes()
+{
+    if (level==1) return l1_stroke;
+    if (level==2) return l2_stroke;
+    if (level==3) return l3_stroke;
+    return l4_stroke;
+}
+
+
+int level_limit()
+{
+    if (level==1) return l1_stroke_limit;
+    if (level==2) return l2_stroke_limit;
+    if (level==3) return l3_stroke_limit;
+    return l4_stroke_limit;
+}
+
+
+//one line out of the file
+void read_score_line(const char *line)
+{
+    if (score_count>=MAX_PLAYERS) return;
+    char name[16] = "";
+    int points[4] = {0,0,0,0};
+    int part = 0;
+    int letters = 0;
+    int number = 0;
+    for (int i=0; ; i++)
+    {
+        char c = line[i];
+        if (c=='|' || c==0)
+        {
+            if (part>0 && part<5) points[part-1] = number;
+            number = 0;
+            part++;
+            if (c==0) break;
+        }
+        else if (part==0)
+        {
+            if (letters<15)
+            {
+                name[letters] = c;
+                letters++;
+                name[letters] = 0;
+            }
+        }
+        else if (c>='0' && c<='9') number = number*10 + (c-'0');
+    }
+    if (letters==0 || part<5) return;        //not a line this game wrote
+    TextCopy(score_name[score_count],name);
+    for (int i=0; i<4; i++) score_points[score_count][i] = points[i];
+    score_count++;
+}
+
+
+void load_scores()
+{
+    score_count = 0;
+    if (FileExists("scores.txt")==0) return;
+    char *text = LoadFileText("scores.txt");
+    if (text==0) return;
+    char line[64] = "";
+    int letters = 0;
+    for (int i=0; ; i++)
+    {
+        char c = text[i];
+        if (c=='\n' || c=='\r' || c==0)
+        {
+            line[letters] = 0;
+            if (letters>0) read_score_line(line);
+            letters = 0;
+            if (c==0) break;
+        }
+        else if (letters<63)
+        {
+            line[letters] = c;
+            letters++;
+        }
+    }
+    UnloadFileText(text);
+}
+
+
+void save_scores()
+{
+    char text[MAX_PLAYERS*48+2] = "";
+    int at = 0;
+    for (int i=0; i<score_count; i++)
+    {
+        TextAppend(text,TextFormat("%s|%d|%d|%d|%d\n",score_name[i],score_points[i][0],score_points[i][1],score_points[i][2],score_points[i][3]),&at);
+    }
+    SaveFileText("scores.txt",text);
+}
+
+
+int find_player(const char *name)
+{
+    for (int i=0; i<score_count; i++)
+    {
+        if (TextIsEqual(score_name[i],name)) return i;
+    }
+    return -1;
+}
+
+
+//typing a name that is already in the file picks that line up again
+void pick_player(const char *name)
+{
+    player_row = find_player(name);
+    if (player_row<0 && score_count<MAX_PLAYERS)
+    {
+        player_row = score_count;
+        TextCopy(score_name[player_row],name);
+        for (int i=0; i<4; i++) score_points[player_row][i] = 0;
+        score_count++;
+    }
+}
+
+
+int player_best(int n)
+{
+    if (player_row<0) return 0;
+    return score_points[player_row][n-1];
+}
+
+
+//a worse run never wipes out a better one
+void record_score(int n, int points)
+{
+    if (player_row<0) return;
+    if (points<=score_points[player_row][n-1]) return;
+    score_points[player_row][n-1] = points;
+    save_scores();
+}
 
 
 //the mascot, standing on its feet at "feet" (outfit 0-3 = level 1-4)
@@ -5043,16 +5226,103 @@ void menu_step(float dt)
 }
 
 
+//the four buttons along the top of the menu: 0 how to play, 1 leaderboard, 2 credits
+Rectangle menu_button(int b)
+{
+    float w = 250*su;
+    float h = 62*su;
+    float gap = 14*su;
+    float right = screen_width - 40*su - 76*su - gap;
+    Rectangle rec = {right - (3-b)*(w+gap) + gap, 46*su, w, h};
+    return rec;
+}
+
+
+Rectangle sound_button()
+{
+    Rectangle rec = {screen_width-40*su-76*su,46*su,76*su,64*su};
+    return rec;
+}
+
+
+//the small one that sits under the scoreboard while a level is being played
+Rectangle game_sound_button()
+{
+    Rectangle rec = {screen_width-76*su,90*su,52*su,44*su};
+    return rec;
+}
+
+
+//back to the menu, bottom left of any page
+Rectangle page_back_button()
+{
+    Rectangle rec = {screen_width/2-760*su+40*su,screen_height-120*su,240*su,64*su};
+    return rec;
+}
+
+
+void draw_button(Rectangle r, const char *text, Color colour, int hover)
+{
+    if (hover==1) DrawRectangleRounded(r,0.25,8,Fade(colour,0.35));
+    else DrawRectangleRounded(r,0.25,8,Fade(colour,0.12));
+    DrawRectangleRoundedLinesEx(r,0.25,8,3*su,colour);
+    int w = MeasureText(text,26*su);
+    DrawText(text,r.x+r.width/2-w/2,r.y+r.height/2-13*su,26*su,hover==1 ? WHITE : colour);
+}
+
+
+//a speaker with two waves, or a cross when the music is off
+void draw_speaker(Rectangle r, int on, int hover)
+{
+    float k = r.height/64;                      //so the same drawing works small, in the corner of a level
+    Color colour = on==1 ? GetColor(0x6FE7FFFF) : GetColor(0xB9C0CCFF);
+    DrawRectangleRounded(r,0.25,8,Fade(BLACK,0.6));       //a dark plate, so it reads over a bright level too
+    if (hover==1) DrawRectangleRounded(r,0.25,8,Fade(colour,0.3));
+    else DrawRectangleRounded(r,0.25,8,Fade(colour,0.12));
+    DrawRectangleRoundedLinesEx(r,0.25,8,3*su,colour);
+    float cx = r.x+r.width/2-10*k;
+    float cy = r.y+r.height/2;
+    DrawRectangle(cx-17*k,cy-8*k,11*k,16*k,colour);                                             //the box
+    DrawTriangle((Vector2){cx+2*k,cy+18*k},(Vector2){cx+2*k,cy-18*k},(Vector2){cx-8*k,cy},colour);   //the cone
+    DrawRectangle(cx-8*k,cy-8*k,12*k,16*k,colour);
+    if (on==1)
+    {
+        DrawRing((Vector2){cx+2*k,cy},13*k,16*k,-55,55,20,colour);
+        DrawRing((Vector2){cx+2*k,cy},21*k,24*k,-55,55,20,Fade(colour,0.65));
+    }
+    else
+    {
+        DrawLineEx((Vector2){cx+10*k,cy-11*k},(Vector2){cx+28*k,cy+11*k},4*k,colour);
+        DrawLineEx((Vector2){cx+28*k,cy-11*k},(Vector2){cx+10*k,cy+11*k},4*k,colour);
+    }
+}
+
+
+void draw_menu_buttons()
+{
+    Vector2 mouse = GetMousePosition();
+    const char *name[3] = {"HOW TO PLAY","LEADERBOARD","CREDITS"};
+    Color colour[3] = {{110,220,120,255},{255,211,77,255},{190,140,255,255}};
+    for (int b=0; b<3; b++)
+    {
+        Rectangle r = menu_button(b);
+        draw_button(r,name[b],colour[b],CheckCollisionPointRec(mouse,r));
+    }
+    Rectangle s = sound_button();
+    draw_speaker(s,sound_on,CheckCollisionPointRec(mouse,s));
+}
+
+
 void draw_menu()
 {
     float t = GetTime();
     Vector2 mouse = GetMousePosition();
     DrawRectangleGradientV(0,0,screen_width,screen_height,GetColor(0x131B2AFF),GetColor(0x05070DFF));
 
-    DrawText("THE ULTIMATE GOLF",40*su+5*su,40*su+5*su,80*su,BLACK);
-    DrawText("THE ULTIMATE GOLF",40*su,40*su,80*su,GetColor(0xFFD34DFF));
-    int hint_width = MeasureText("pick a level      ESC quit",36*su);
-    DrawText("pick a level      ESC quit",screen_width-hint_width-40*su,70*su,36*su,GRAY);
+    DrawText("THE ULTIMATE GOLF",40*su+4*su,44*su+4*su,64*su,BLACK);
+    DrawText("THE ULTIMATE GOLF",40*su,44*su,64*su,GetColor(0xFFD34DFF));
+    if (player_row>=0) DrawText(TextFormat("player: %s      total %d",player_name,player_total(player_row)),44*su,124*su,28*su,GRAY);
+    draw_menu_buttons();
 
     for (int i=0; i<4; i++)
     {
@@ -5072,7 +5342,15 @@ void draw_menu()
         Vector2 no_origin = {0,0};
         DrawTexturePro(card_texture[i].texture,source,d,no_origin,0,WHITE);
         DrawRectangle(d.x,d.y+d.height-74*su,d.width,74*su,Fade(BLACK,0.7));
-        DrawText(TextFormat("%d   %s",i+1,level_name[i]),d.x+24*su,d.y+d.height-58*su,46*su,card_colour[i]);
+        DrawText(TextFormat("LEVEL %d  -  %s",i+1,level_name[i]),d.x+24*su,d.y+d.height-58*su,46*su,card_colour[i]);
+        if (player_best(i+1)>0)
+        {
+            const char *best = TextFormat("BEST %d",player_best(i+1));
+            float best_w = MeasureText(best,30*su)+36*su;
+            Rectangle tag = {d.x+d.width-best_w-16*su,d.y+16*su,best_w,46*su};
+            DrawRectangleRounded(tag,0.4,8,Fade(BLACK,0.7));
+            DrawText(best,tag.x+18*su,tag.y+8*su,30*su,card_colour[i]);
+        }
         if (hover==1) DrawRectangleLinesEx(d,5*su,card_colour[i]);
         else DrawRectangleLinesEx(d,3*su,Fade(card_colour[i],0.7));
 
@@ -5120,6 +5398,211 @@ void draw_menu()
 }
 
 
+//==================== NAME, HOW TO PLAY, CREDITS, LEADERBOARD ====================
+//the same dark page every one of these screens is drawn on
+Rectangle draw_page(const char *title, int with_back)
+{
+    DrawRectangleGradientV(0,0,screen_width,screen_height,GetColor(0x131B2AFF),GetColor(0x05070DFF));
+    DrawText(title,40*su+4*su,40*su+4*su,70*su,BLACK);
+    DrawText(title,40*su,40*su,70*su,GetColor(0xFFD34DFF));
+    Rectangle panel = {screen_width/2-760*su,150*su,1520*su,screen_height-290*su};
+    DrawRectangleRounded(panel,0.03,8,GetColor(0x151C2BFF));
+    DrawRectangleRoundedLinesEx(panel,0.03,8,3*su,GetColor(0x2A3550FF));
+    Vector2 mouse = GetMousePosition();
+    if (with_back==1)
+    {
+        Rectangle back = page_back_button();
+        draw_button(back,"< BACK",GetColor(0xFFD34DFF),CheckCollisionPointRec(mouse,back));
+    }
+    Rectangle s = sound_button();
+    draw_speaker(s,sound_on,CheckCollisionPointRec(mouse,s));
+    return panel;
+}
+
+
+void draw_name_entry()
+{
+    Rectangle p = draw_page("WHO IS PLAYING?",0);
+    float t = GetTime();
+    DrawText("type your name, then press ENTER",p.x+80*su,p.y+90*su,40*su,LIGHTGRAY);
+    DrawText("the same name again picks up the scores you already have",p.x+80*su,p.y+150*su,30*su,GRAY);
+
+    Rectangle box = {p.x+80*su,p.y+240*su,900*su,120*su};
+    DrawRectangleRounded(box,0.15,8,GetColor(0x0B1220FF));
+    DrawRectangleRoundedLinesEx(box,0.15,8,4*su,GetColor(0xFFD34DFF));
+    DrawText(player_name,box.x+30*su,box.y+30*su,64*su,WHITE);
+    if (fmod(t,1.0)<0.5) DrawRectangle(box.x+40*su+MeasureText(player_name,64*su),box.y+28*su,4*su,64*su,WHITE);
+    DrawText(TextFormat("%d / 12 letters      BACKSPACE deletes",name_length),box.x,box.y+140*su,28*su,GRAY);
+
+    draw_mascot((Vector2){p.x+p.width-260*su,p.y+p.height-80*su},1,1,320*su,0);
+}
+
+
+void draw_how_to_play()
+{
+    Rectangle p = draw_page("HOW TO PLAY",1);
+    float t = GetTime();
+
+    //--- the picture: a little course inside its own frame ---
+    Rectangle shot = {p.x+60*su,p.y+50*su,p.width-120*su,250*su};
+    DrawRectangleRounded(shot,0.06,8,GetColor(0x101A2CFF));
+    DrawRectangleRoundedLinesEx(shot,0.06,8,2*su,GetColor(0x2A3550FF));
+
+    float y = shot.y+150*su;
+    DrawRectangle(shot.x+20*su,y+26*su,shot.width-40*su,6*su,GetColor(0x1E4D2BFF));    //the ground
+    Vector2 ball = {shot.x+shot.width*0.30,y};
+    Vector2 hole = {shot.x+shot.width*0.86,y};
+
+    //the hole and its flag
+    DrawEllipse(hole.x,hole.y+16*su,30*su,14*su,BLACK);
+    DrawLineEx((Vector2){hole.x,hole.y+14*su},(Vector2){hole.x,hole.y-86*su},4*su,LIGHTGRAY);
+    DrawTriangle((Vector2){hole.x,hole.y-86*su},(Vector2){hole.x,hole.y-38*su},(Vector2){hole.x+62*su,hole.y-62*su},RED);
+
+    //the drag: a line of dots going back from the ball, and the shot line going forward
+    float pull = 80*su+34*su*fabsf(sin(t*1.4));
+    for (int i=1; i<=6; i++)
+    {
+        float q = (float)i/6;
+        DrawCircleV((Vector2){ball.x-34*su-pull*q,y},5*su-q*2*su,Fade(WHITE,0.75-q*0.45));
+    }
+    DrawCircleV((Vector2){ball.x-34*su-pull,y},13*su,Fade(GetColor(0xFFD34DFF),0.9));
+    DrawLineEx((Vector2){ball.x+30*su,y},(Vector2){ball.x+30*su+pull*2.4,y},5*su,Fade(GetColor(0x6FE7FFFF),0.85));
+    DrawTriangle((Vector2){ball.x+40*su+pull*2.4,y},(Vector2){ball.x+22*su+pull*2.4,y-11*su},(Vector2){ball.x+22*su+pull*2.4,y+11*su},GetColor(0x6FE7FFFF));
+    DrawCircleV(ball,20*su,WHITE);
+    DrawCircleLines(ball.x,ball.y,20*su,GRAY);
+
+    //labels, each one centred on the thing it names
+    const char *drag_text = "1.  pull back with the mouse";
+    const char *go_text = "2.  let go, and it flies";
+    DrawText(drag_text,ball.x-pull/2-MeasureText(drag_text,28*su)/2-30*su,y-104*su,28*su,GetColor(0xFFD34DFF));
+    DrawText(go_text,ball.x+30*su+pull*1.2-MeasureText(go_text,28*su)/2,y+62*su,28*su,GetColor(0x6FE7FFFF));
+    DrawText("your ball",ball.x-MeasureText("your ball",26*su)/2,y-58*su,26*su,GRAY);
+    DrawText("the hole",hole.x-MeasureText("the hole",26*su)/2,y+62*su,26*su,GRAY);
+
+    //--- the rules ---
+    const char *step[6] = {
+        "The white ball is you. The hole with the flag is where it has to go.",
+        "Every shot counts as one stroke, and each level gives you a limited number of them.",
+        "The counter at the top of the screen shows the strokes you have used and the limit.",
+        "Water, lava, the void, quicksand and the traps put the ball back where you shot from.",
+        "R plays the level again from the start. ESC leaves it and goes back to the menu.",
+        "Before every level a briefing names each obstacle in it. Press SKIP once you know them."};
+    for (int i=0; i<6; i++)
+    {
+        float ry = p.y+350*su+i*54*su;
+        DrawCircle(p.x+94*su,ry+15*su,19*su,Fade(GetColor(0xFFD34DFF),0.22));
+        DrawText(TextFormat("%d",i+1),p.x+86*su,ry+1*su,28*su,GetColor(0xFFD34DFF));
+        DrawText(step[i],p.x+140*su,ry,28*su,LIGHTGRAY);
+    }
+
+    //--- the scoring, behind its own line ---
+    DrawLineEx((Vector2){p.x+70*su,p.y+686*su},(Vector2){p.x+p.width-70*su,p.y+686*su},2*su,GetColor(0x2A3550FF));
+    DrawText("SCORING",p.x+86*su,p.y+706*su,30*su,GetColor(0x6FE7FFFF));
+    DrawText("each stroke you did NOT use is worth 10 points on BOT, 25 on CHAD, 50 on GOAT,",p.x+280*su,p.y+706*su,26*su,LIGHTGRAY);
+    DrawText("plus 100 / 250 / 500 for finishing. Your best on each level is kept in scores.txt.",p.x+280*su,p.y+742*su,26*su,LIGHTGRAY);
+}
+
+
+void draw_credits()
+{
+    Rectangle p = draw_page("CREDITS",1);
+    float x = p.x+100*su;
+    draw_mascot((Vector2){p.x+p.width-230*su,p.y+310*su},3,0,270*su,0);
+    DrawText("THE ULTIMATE GOLF",x,p.y+60*su,64*su,GetColor(0xFFD34DFF));
+
+    DrawText("DEVELOPERS",x,p.y+180*su,32*su,GetColor(0x6FE7FFFF));
+    DrawText("Abdullah Al Nafi  -  2505093",x,p.y+230*su,38*su,WHITE);
+    DrawText("Syed Abdul Fahim  -  2505114",x,p.y+280*su,38*su,WHITE);
+
+    DrawText("SPRITES AND ARTWORK",x,p.y+370*su,32*su,GetColor(0x6FE7FFFF));
+    DrawText("All sprites and textures in this game were generated with AI.",x,p.y+420*su,30*su,LIGHTGRAY);
+
+    DrawText("SOUND AND MUSIC",x,p.y+500*su,32*su,GetColor(0x6FE7FFFF));
+    DrawText("All sound effects and music tracks are from freesound.org.",x,p.y+550*su,30*su,LIGHTGRAY);
+
+    DrawText("SPECIAL THANKS",x,p.y+630*su,32*su,GetColor(0x6FE7FFFF));
+    DrawText("raylib, by Ramon Santamaria and its contributors - the library this game is built on.",x,p.y+680*su,30*su,LIGHTGRAY);
+
+
+}
+
+
+void draw_leaderboard()
+{
+    Rectangle p = draw_page("LEADERBOARD",1);
+    if (score_count==0)
+    {
+        DrawText("no scores yet - go and finish a level",p.x+100*su,p.y+120*su,44*su,GRAY);
+        return;
+    }
+
+    //sort the rows by total, biggest first
+    int order[MAX_PLAYERS];
+    for (int i=0; i<score_count; i++) order[i] = i;
+    for (int i=0; i<score_count; i++)
+    {
+        for (int j=i+1; j<score_count; j++)
+        {
+            if (player_total(order[j])>player_total(order[i]))
+            {
+                int keep = order[i];
+                order[i] = order[j];
+                order[j] = keep;
+            }
+        }
+    }
+
+    float name_x = p.x+180*su;
+    float first = p.x+640*su;
+    float step = 160*su;
+    float total_x = p.x+1330*su;
+    float head = p.y+70*su;
+    DrawText("#",p.x+90*su,head,32*su,GRAY);
+    DrawText("NAME",name_x,head,32*su,GRAY);
+    for (int i=0; i<4; i++) DrawText(TextFormat("L%d",i+1),first+i*step,head,32*su,card_colour[i]);
+    DrawText("TOTAL",total_x,head,32*su,GetColor(0xFFD34DFF));
+    DrawLineEx((Vector2){p.x+80*su,head+46*su},(Vector2){p.x+p.width-80*su,head+46*su},2*su,GetColor(0x2A3550FF));
+
+    int rows = score_count;
+    if (rows>10) rows = 10;
+    for (int r=0; r<rows; r++)
+    {
+        int i = order[r];
+        float y = head+76*su+r*62*su;
+        if (i==player_row) DrawRectangleRounded((Rectangle){p.x+70*su,y-10*su,p.width-140*su,58*su},0.4,8,Fade(GetColor(0xFFD34DFF),0.15));
+        Color shade = r==0 ? GetColor(0xFFD34DFF) : WHITE;
+        DrawText(TextFormat("%d",r+1),p.x+90*su,y,36*su,shade);
+        DrawText(score_name[i],name_x,y,36*su,shade);
+        for (int n=0; n<4; n++)
+        {
+            if (score_points[i][n]>0) DrawText(TextFormat("%d",score_points[i][n]),first+n*step,y,36*su,LIGHTGRAY);
+            else DrawText("-",first+n*step,y,36*su,DARKGRAY);
+        }
+        DrawText(TextFormat("%d",player_total(i)),total_x,y,36*su,shade);
+    }
+    DrawText("kept in scores.txt, next to the game",p.x+90*su,p.y+p.height-70*su,26*su,GRAY);
+}
+
+
+//the points for the run that has just finished, under the level's own panel
+void draw_score_panel()
+{
+    int d = current_difficulty;
+    int left = level_limit()-level_strokes();
+    if (left<0) left = 0;
+    int points = score_for(level_limit(),level_strokes(),d);
+    Rectangle panel = {screen_width/2-340*su,screen_height/2+200*su,680*su,180*su};
+    DrawRectangleRounded(panel,0.08,8,GetColor(0x151C2BFF));
+    DrawRectangleRoundedLinesEx(panel,0.08,8,3*su,GetColor(0xFFD34DFF));
+    DrawText(TextFormat("%d strokes left  x  %d",left,score_rate[d]),panel.x+36*su,panel.y+28*su,30*su,LIGHTGRAY);
+    DrawText(TextFormat("finish bonus  + %d",score_bonus[d]),panel.x+36*su,panel.y+72*su,30*su,LIGHTGRAY);
+    DrawText(TextFormat("your best: %d",player_best(level)),panel.x+36*su,panel.y+122*su,28*su,GRAY);
+    const char *big = TextFormat("%d",points);
+    DrawText(big,panel.x+panel.width-MeasureText(big,80*su)-40*su,panel.y+40*su,80*su,GetColor(0xFFD34DFF));
+    DrawText("POINTS",panel.x+panel.width-MeasureText("POINTS",26*su)-40*su,panel.y+126*su,26*su,GRAY);
+}
+
+
 //==================== SOUNDS ====================
 Sound snd_shot, snd_bounce, snd_pot, snd_fanfare, snd_game_over, snd_reset, snd_blip;
 Sound snd_hop, snd_slam;
@@ -5128,6 +5611,22 @@ Sound snd_splash, snd_crab, snd_boing;
 Sound snd_warp, snd_whoosh, snd_ufo;
 Sound snd_chomp, snd_dart, snd_plank, snd_door, snd_plate, snd_gloop;
 Music music[7];            //0 menu, 1-4 level ambience, 5 crabs walking (level 2), 6 extra intro track
+float music_base[7] = {0.5,0.4,0.4,2.5,0.4,0.35,1};   //music[3] is a deep quiet hum, so it gets a boost
+
+
+//each stream's own level, set once
+void set_music_volumes()
+{
+    for (int i=0; i<7; i++) SetMusicVolume(music[i],music_base[i]);
+}
+
+
+//the speaker button and the M key: one call silences the whole audio device,
+//music and sound effects together, without touching a single volume of its own
+void apply_sound_switch()
+{
+    SetMasterVolume(sound_on ? 1.0 : 0.0);
+}
 int music_playing = -1;
 float bounce_wait = 0;
 float intro_last_hop = 0;
@@ -5196,11 +5695,8 @@ void load_sounds()
     music[4] = LoadMusicStream("assets/sounds-lost_temple/jungle_ambience.wav");
     music[5] = LoadMusicStream("assets/sounds-shoreline/crab_walking.wav");
     music[6] = LoadMusicStream("assets/sounds-intro/additional_music_for_intro.wav");
-    SetMusicVolume(music[0],0.5);
-    for (int i=1; i<5; i++) SetMusicVolume(music[i],0.4);
-    SetMusicVolume(music[3],2.5);      //space hum is deep and quiet, so it gets a big boost
-    SetMusicVolume(music[5],0.35);
-    SetMusicVolume(music[6],1);
+    set_music_volumes();
+    apply_sound_switch();
 }
 
 
@@ -5805,11 +6301,27 @@ int main()
     for (int i=0; i<4; i++) card_texture[i] = LoadRenderTexture(screen_width,screen_height);
     InitAudioDevice();
     load_sounds();
+    load_scores();
 
     while(!WindowShouldClose() && quit==0)
     {
         float dt = GetFrameTime();
         if (dt>1.0/30) dt = 1.0/30;
+
+        //the sound switch: M anywhere, the big speaker on the menu pages, the small one in a level
+        Rectangle speaker = game_mode==2 ? game_sound_button() : sound_button();
+        int on_speaker = CheckCollisionPointRec(GetMousePosition(),speaker) && game_mode!=3;
+        int sound_clicked = IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && on_speaker;
+        if ((IsKeyPressed(KEY_M) && game_mode!=4) || sound_clicked)
+        {
+            sound_on = !sound_on;
+            apply_sound_switch();
+            play(snd_blip,0.9);
+        }
+        //a press on the button must not also become a golf shot, so the level is left
+        //alone until that press is let go again
+        if (sound_clicked && game_mode==2) sound_press = 1;
+        if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) sound_press = 0;
 
         if (game_mode==0)
         {
@@ -5826,7 +6338,11 @@ int main()
             if (title_time>=0.15 && title_time-dt<0.15) play(snd_slam,1);
 
             //click or any key skips to the menu
-            if (intro_time>0.3 && (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) || GetKeyPressed()!=0)) game_mode = 1;
+            if (intro_time>0.3 && (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) || GetKeyPressed()!=0))
+            {
+                game_mode = 4;
+                while (GetCharPressed()>0);     //the key that skipped the intro must not land in the name box
+            }
         }
         else if (game_mode==1)
         {
@@ -5845,14 +6361,65 @@ int main()
             if (hover>=0 && hover!=last_hover) play(snd_blip,0.4);
             last_hover = hover;
 
+            if (chosen_level==0 && IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
+            {
+                for (int b=0; b<3; b++)
+                {
+                    if (CheckCollisionPointRec(mouse,menu_button(b)))
+                    {
+                        play(snd_blip,0.9);
+                        game_mode = 5+b;
+                    }
+                }
+            }
+            if (game_mode!=1) continue;
+
             menu_step(dt);
             if (chosen_level!=chosen_before || game_mode!=1) play(snd_blip,0.9);
+        }
+        else if (game_mode==4)
+        {
+            //typing the name: letters, digits and spaces only, so the '|' in the file is safe
+            int key = GetCharPressed();
+            while (key>0)
+            {
+                if (key>='a' && key<='z') key = key-32;
+                int allowed = (key>='A' && key<='Z') || (key>='0' && key<='9') || key==' ';
+                if (allowed==1 && name_length<12)
+                {
+                    player_name[name_length] = key;
+                    name_length++;
+                    player_name[name_length] = 0;
+                    play(snd_blip,0.4);
+                }
+                key = GetCharPressed();
+            }
+            if (IsKeyPressed(KEY_BACKSPACE) && name_length>0)
+            {
+                name_length--;
+                player_name[name_length] = 0;
+            }
+            if (IsKeyPressed(KEY_ENTER) && name_length>0)
+            {
+                pick_player(player_name);
+                play(snd_blip,0.9);
+                game_mode = 1;
+            }
+        }
+        else if (game_mode>=5 && game_mode<=7)
+        {
+            int back = IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && CheckCollisionPointRec(GetMousePosition(),page_back_button());
+            if (IsKeyPressed(KEY_ESCAPE) || back==1)
+            {
+                play(snd_blip,0.9);
+                game_mode = 1;
+            }
         }
         else if (game_mode==3) brief_step(dt);
         else
         {
             if (IsKeyPressed(KEY_ESCAPE)) game_mode = 1;
-            else
+            else if (sound_press==0)
             {
                 remember_level();
                 if (level==1) l1_update();
@@ -5860,6 +6427,12 @@ int main()
                 if (level==3) l3_update();
                 if (level==4) l4_update();
                 level_sounds();
+                if (level_state()==0) score_saved = 0;
+                if (level_state()==1 && score_saved==0)
+                {
+                    record_score(level,score_for(level_limit(),level_strokes(),current_difficulty));
+                    score_saved = 1;
+                }
             }
         }
 
@@ -5874,8 +6447,8 @@ int main()
                 music_playing = -1;
             }
         }
-        else if (game_mode==1) play_music(0);
-        else play_music(level);
+        else if (game_mode==2 || game_mode==3) play_music(level);
+        else play_music(0);
 
         //the extra intro track plays on top, only while the intro is on
         if (game_mode==0)
@@ -5895,12 +6468,19 @@ int main()
         if (game_mode==0) draw_intro();
         if (game_mode==1) draw_menu();
         if (game_mode==3) draw_brief();
+        if (game_mode==4) draw_name_entry();
+        if (game_mode==5) draw_how_to_play();
+        if (game_mode==6) draw_leaderboard();
+        if (game_mode==7) draw_credits();
         if (game_mode==2)
         {
             if (level==1) l1_draw();
             if (level==2) l2_draw();
             if (level==3) l3_draw();
             if (level==4) l4_draw();
+            if (level_state()==1) draw_score_panel();
+            Rectangle small = game_sound_button();
+            draw_speaker(small,sound_on,CheckCollisionPointRec(GetMousePosition(),small));
         }
         EndDrawing();
     }
