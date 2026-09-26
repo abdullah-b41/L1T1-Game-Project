@@ -4828,7 +4828,7 @@ int score_count = 0;
 
 int sound_on = 1;              //the one switch for music AND sound effects
 int score_saved = 0;              //the score for this run has already been written
-int sound_press = 0;              //the speaker button is being held down, so no shot
+int ui_press = 0;                 //a button on top of a level is held down, so no shot
 
 int score_rate[3] = {10,25,50};        //points for every stroke you did NOT use
 int score_bonus[3] = {100,250,500};    //for finishing the level at all
@@ -5142,6 +5142,109 @@ Rectangle difficulty_rect(int d)
 }
 
 
+//==================== THE KEY BUTTONS ====================
+Rectangle brief_panel();
+Rectangle menu_button(int b);
+//every keyboard shortcut in the game is also a button: a key cap, then what it does.
+//the rectangle is worked out from the text, so the drawing and the click test agree.
+float key_button_width(const char *key, const char *what, float h)
+{
+    float s = h*0.42;
+    return h*0.22 + MeasureText(key,s)+s*0.7 + s*0.6 + MeasureText(what,s) + h*0.3;
+}
+
+
+Rectangle key_button(float x, float y, const char *key, const char *what, float h)
+{
+    Rectangle rec = {x,y,key_button_width(key,what,h),h};
+    return rec;
+}
+
+
+//the same button, but placed by its right hand edge
+Rectangle key_button_right(float right, float y, const char *key, const char *what, float h)
+{
+    float w = key_button_width(key,what,h);
+    Rectangle rec = {right-w,y,w,h};
+    return rec;
+}
+
+
+void draw_key_button(Rectangle r, const char *key, const char *what, Color colour, int hover)
+{
+    float s = r.height*0.42;
+    DrawRectangleRounded(r,0.3,8,Fade(BLACK,0.8));
+    DrawRectangleRounded(r,0.3,8,hover==1 ? Fade(colour,0.35) : Fade(colour,0.12));
+    DrawRectangleRoundedLinesEx(r,0.3,8,2*su,hover==1 ? colour : Fade(colour,0.75));
+    Rectangle cap = {r.x+r.height*0.22,r.y+r.height/2-s*0.78,MeasureText(key,s)+s*0.7,s*1.56};
+    DrawRectangleRounded(cap,0.35,6,Fade(colour,0.28));
+    DrawRectangleRoundedLinesEx(cap,0.35,6,2*su,Fade(colour,0.85));
+    DrawText(key,cap.x+s*0.35,cap.y+s*0.28,s,colour);
+    DrawText(what,cap.x+cap.width+s*0.6,r.y+r.height/2-s/2,s,hover==1 ? WHITE : Fade(WHITE,0.85));
+}
+
+
+int over(Rectangle r)
+{
+    return CheckCollisionPointRec(GetMousePosition(),r);
+}
+
+
+//--- where each one sits ---
+//the scoreboard pair: 0 restart, 1 menu
+Rectangle hud_key(int which)
+{
+    float h = 46*su;
+    Rectangle esc = key_button_right(screen_width-24*su,12*su,"ESC","menu",h);
+    if (which==1) return esc;
+    return key_button_right(esc.x-10*su,12*su,"R","restart",h);
+}
+
+
+//the pair on the level clear / failed panel: 0 play again, 1 menu
+Rectangle end_key(int which)
+{
+    float h = 54*su;
+    float total = key_button_width("R","play again",h)+key_button_width("ESC","menu",h)+16*su;
+    float left = screen_width/2-total/2;
+    Rectangle again = key_button(left,screen_height/2+66*su,"R","play again",h);
+    if (which==0) return again;
+    return key_button(again.x+again.width+16*su,screen_height/2+66*su,"ESC","menu",h);
+}
+
+
+Rectangle menu_quit_key()
+{
+    return key_button_right(menu_button(0).x-14*su,46*su,"ESC","quit",62*su);
+}
+
+
+Rectangle difficulty_back_key()
+{
+    float x = screen_width/2+620*su-40*su;
+    float y = screen_height/2+270*su-64*su;
+    return key_button_right(x,y,"ESC","back",52*su);
+}
+
+
+Rectangle brief_menu_key()
+{
+    Rectangle p = brief_panel();
+    return key_button(p.x+p.width/2-200*su,p.y+p.height-95*su,"ESC","menu",58*su);
+}
+
+
+//the name screen: 0 start, 1 delete a letter
+Rectangle name_key(int which)
+{
+    float y = 150*su+470*su;
+    float x = screen_width/2-760*su+80*su;
+    Rectangle start = key_button(x,y,"ENTER","start playing",70*su);
+    if (which==0) return start;
+    return key_button(start.x+start.width+20*su,y,"BKSP","delete a letter",70*su);
+}
+
+
 //start level n with the chosen difficulty
 void start_level(int n, int difficulty)
 {
@@ -5221,7 +5324,7 @@ void menu_step(float dt)
                 chosen_level = 0;
             }
         }
-        if (IsKeyPressed(KEY_ESCAPE)) chosen_level = 0;
+        if (IsKeyPressed(KEY_ESCAPE) || (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && over(difficulty_back_key()))) chosen_level = 0;
     }
 }
 
@@ -5256,7 +5359,7 @@ Rectangle game_sound_button()
 //back to the menu, bottom left of any page
 Rectangle page_back_button()
 {
-    Rectangle rec = {screen_width/2-760*su+40*su,screen_height-120*su,240*su,64*su};
+    Rectangle rec = {screen_width/2-760*su+40*su,screen_height-120*su,340*su,64*su};
     return rec;
 }
 
@@ -5310,6 +5413,8 @@ void draw_menu_buttons()
     }
     Rectangle s = sound_button();
     draw_speaker(s,sound_on,CheckCollisionPointRec(mouse,s));
+    Rectangle q = menu_quit_key();
+    draw_key_button(q,"ESC","quit",GetColor(0xFF7A6EFF),CheckCollisionPointRec(mouse,q));
 }
 
 
@@ -5369,7 +5474,8 @@ void draw_menu()
         DrawRectangleRounded(panel,0.08,8,GetColor(0x151C2BFF));
         DrawRectangleRoundedLinesEx(panel,0.08,8,4*su,card_colour[c]);
         DrawText(TextFormat("%s  -  how good are you?",level_name[c]),panel.x+60*su,panel.y+50*su,56*su,card_colour[c]);
-        DrawText("ESC back",panel.x+panel.width-200*su,panel.y+panel.height-50*su,32*su,GRAY);
+        Rectangle back = difficulty_back_key();
+        draw_key_button(back,"ESC","back",card_colour[c],CheckCollisionPointRec(mouse,back));
 
         const char *name[3] = {"BOT","CHAD","GOAT"};
         const char *line1[3] = {"easy","medium","hard"};
@@ -5398,6 +5504,7 @@ void draw_menu()
 }
 
 
+
 //==================== NAME, HOW TO PLAY, CREDITS, LEADERBOARD ====================
 //the same dark page every one of these screens is drawn on
 Rectangle draw_page(const char *title, int with_back)
@@ -5412,7 +5519,7 @@ Rectangle draw_page(const char *title, int with_back)
     if (with_back==1)
     {
         Rectangle back = page_back_button();
-        draw_button(back,"< BACK",GetColor(0xFFD34DFF),CheckCollisionPointRec(mouse,back));
+        draw_key_button(back,"ESC","back to the menu",GetColor(0xFFD34DFF),CheckCollisionPointRec(mouse,back));
     }
     Rectangle s = sound_button();
     draw_speaker(s,sound_on,CheckCollisionPointRec(mouse,s));
@@ -5432,7 +5539,11 @@ void draw_name_entry()
     DrawRectangleRoundedLinesEx(box,0.15,8,4*su,GetColor(0xFFD34DFF));
     DrawText(player_name,box.x+30*su,box.y+30*su,64*su,WHITE);
     if (fmod(t,1.0)<0.5) DrawRectangle(box.x+40*su+MeasureText(player_name,64*su),box.y+28*su,4*su,64*su,WHITE);
-    DrawText(TextFormat("%d / 12 letters      BACKSPACE deletes",name_length),box.x,box.y+140*su,28*su,GRAY);
+    DrawText(TextFormat("%d / 12 letters",name_length),box.x,box.y+140*su,28*su,GRAY);
+    Vector2 mouse = GetMousePosition();
+    draw_key_button(name_key(0),"ENTER","start playing",GetColor(0xFFD34DFF),over(name_key(0)) && name_length>0);
+    draw_key_button(name_key(1),"BKSP","delete a letter",GetColor(0xB9C0CCFF),over(name_key(1)));
+    if (mouse.x<0) return;
 
     draw_mascot((Vector2){p.x+p.width-260*su,p.y+p.height-80*su},1,1,320*su,0);
 }
@@ -5581,6 +5692,33 @@ void draw_leaderboard()
         DrawText(TextFormat("%d",player_total(i)),total_x,y,36*su,shade);
     }
     DrawText("kept in scores.txt, next to the game",p.x+90*su,p.y+p.height-70*su,26*su,GRAY);
+}
+
+
+//the R key lives inside each level, so the button needs the same door
+void restart_level()
+{
+    if (level==1) l1_reset_level();
+    if (level==2) l2_reset_level();
+    if (level==3) l3_reset_level();
+    if (level==4) l4_reset_level();
+    score_saved = 0;
+}
+
+
+//the two buttons drawn over the level's own "R restart  ESC menu" text
+void draw_level_keys()
+{
+    //the level draws "R restart  ESC menu" itself; this plate hides it and the buttons take its place
+    DrawRectangle(hud_key(0).x-32*su,6*su,screen_width-hud_key(0).x+32*su,58*su,GetColor(0x1A1E28FF));
+    draw_key_button(hud_key(0),"R","restart",GetColor(0xFFD34DFF),over(hud_key(0)));
+    draw_key_button(hud_key(1),"ESC","menu",GetColor(0xB9C0CCFF),over(hud_key(1)));
+    if (level_state()!=0)
+    {
+        DrawRectangle(screen_width/2-330*su,screen_height/2+56*su,660*su,74*su,GetColor(0x1A1E28FF));
+        draw_key_button(end_key(0),"R","play again",GetColor(0xFFD34DFF),over(end_key(0)));
+        draw_key_button(end_key(1),"ESC","menu",GetColor(0xB9C0CCFF),over(end_key(1)));
+    }
 }
 
 
@@ -6097,7 +6235,7 @@ void brief_step(float dt)
         if (brief_page<last_page) brief_page++;
         else game_mode = 2;
     }
-    if (IsKeyPressed(KEY_ESCAPE)) game_mode = 1;
+    if (IsKeyPressed(KEY_ESCAPE) || (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && over(brief_menu_key()))) game_mode = 1;
 }
 
 
@@ -6275,7 +6413,9 @@ void draw_brief()
         int w = MeasureText(label[b],40*su);
         DrawText(label[b],r.x+r.width/2-w/2,r.y+r.height/2-20*su,40*su,text);
     }
-    DrawText("ENTER next    ESC menu",p.x+p.width/2-MeasureText("ENTER next    ESC menu",26*su)/2,p.y+p.height-70*su,26*su,Fade(text,0.7));
+    Rectangle menu_key = brief_menu_key();
+    draw_key_button(menu_key,"ESC","menu",text,over(menu_key));
+    DrawText("ENTER  next page",p.x+p.width/2+60*su,p.y+p.height-78*su,26*su,Fade(text,0.7));
 }
 
 
@@ -6318,10 +6458,23 @@ int main()
             apply_sound_switch();
             play(snd_blip,0.9);
         }
-        //a press on the button must not also become a golf shot, so the level is left
+        //the buttons drawn on top of a level: the same things R and ESC do
+        if (game_mode==2 && IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
+        {
+            int restart = over(hud_key(0)) || (level_state()!=0 && over(end_key(0)));
+            int to_menu = over(hud_key(1)) || (level_state()!=0 && over(end_key(1)));
+            if (restart==1 || to_menu==1)
+            {
+                play(snd_blip,0.9);
+                ui_press = 1;
+                if (restart==1) restart_level();
+                if (to_menu==1) game_mode = 1;
+            }
+        }
+        //a press on any of them must not also become a golf shot, so the level is left
         //alone until that press is let go again
-        if (sound_clicked && game_mode==2) sound_press = 1;
-        if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) sound_press = 0;
+        if (sound_clicked && game_mode==2) ui_press = 1;
+        if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) ui_press = 0;
 
         if (game_mode==0)
         {
@@ -6361,6 +6514,7 @@ int main()
             if (hover>=0 && hover!=last_hover) play(snd_blip,0.4);
             last_hover = hover;
 
+            if (chosen_level==0 && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && over(menu_quit_key())) quit = 1;
             if (chosen_level==0 && IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
             {
                 for (int b=0; b<3; b++)
@@ -6394,12 +6548,14 @@ int main()
                 }
                 key = GetCharPressed();
             }
-            if (IsKeyPressed(KEY_BACKSPACE) && name_length>0)
+            int click = IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
+            if ((IsKeyPressed(KEY_BACKSPACE) || (click==1 && over(name_key(1)))) && name_length>0)
             {
                 name_length--;
                 player_name[name_length] = 0;
+                play(snd_blip,0.4);
             }
-            if (IsKeyPressed(KEY_ENTER) && name_length>0)
+            if ((IsKeyPressed(KEY_ENTER) || (click==1 && over(name_key(0)))) && name_length>0)
             {
                 pick_player(player_name);
                 play(snd_blip,0.9);
@@ -6419,7 +6575,7 @@ int main()
         else
         {
             if (IsKeyPressed(KEY_ESCAPE)) game_mode = 1;
-            else if (sound_press==0)
+            else if (ui_press==0)
             {
                 remember_level();
                 if (level==1) l1_update();
@@ -6479,6 +6635,7 @@ int main()
             if (level==3) l3_draw();
             if (level==4) l4_draw();
             if (level_state()==1) draw_score_panel();
+            draw_level_keys();
             Rectangle small = game_sound_button();
             draw_speaker(small,sound_on,CheckCollisionPointRec(GetMousePosition(),small));
         }
