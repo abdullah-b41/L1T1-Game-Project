@@ -4468,10 +4468,11 @@ int quit = 0;
 int current_difficulty = 1;
 
 Texture2D mascot_texture;
+Texture2D cat_texture[2];
 float intro_time = 0;
 
 RenderTexture2D card_texture[4];
-int card_turn = 0;
+int cards_drawn = 0;
 int chosen_level = 0;
 Color card_colour[4] = {{232, 185, 35, 255}, {63, 180, 207, 255}, {190, 90, 255, 255}, {120, 200, 90, 255}};
 const char *level_name[4] = {"FOUNDRY", "SHORELINE", "EVENT HORIZON", "LOST TEMPLE"};
@@ -4721,7 +4722,7 @@ void draw_intro()
             hops = 1;
             hop_height = 380 * su;
         }
-        hop = fabsf(sin(p * hops * PI));
+        hop = fabs(sin(p * hops * PI));
         feet.x = -150 * su + p * (screen_width + 300 * su);
         if (part == 1)
             feet.x = screen_width + 150 * su - p * (screen_width + 300 * su);
@@ -4936,13 +4937,17 @@ void start_level(int n, int difficulty)
 
 void menu_step(float dt)
 {
-    for (int n = 1; n <= 4; n++)
-        background_step(n, dt);
-    BeginTextureMode(card_texture[card_turn]);
-    ClearBackground(BLACK);
-    draw_scene(card_turn + 1);
-    EndTextureMode();
-    card_turn = (card_turn + 1) % 4;
+    if (cards_drawn == 0)
+    {
+        for (int i = 0; i < 4; i++)
+        {
+            BeginTextureMode(card_texture[i]);
+            ClearBackground(BLACK);
+            draw_scene(i + 1);
+            EndTextureMode();
+        }
+        cards_drawn = 1;
+    }
 
     Vector2 mouse = GetMousePosition();
     if (chosen_level == 0)
@@ -5107,7 +5112,7 @@ void draw_menu()
 
         Vector2 feet = {d.x + d.width - 100 * su, d.y + d.height - 10 * su};
         if (hover == 1)
-            feet.y = feet.y - fabsf(sin(t * 6)) * 30 * su;
+            feet.y = feet.y - fabs(sin(t * 6)) * 30 * su;
         draw_mascot(feet, i, hover, 150 * su, 0);
     }
 
@@ -5145,7 +5150,7 @@ void draw_menu()
             DrawText(line4[d], b.x + 30 * su, b.y + 265 * su, 30 * su, LIGHTGRAY);
         }
 
-        Vector2 feet = {panel.x + panel.width - 120 * su, panel.y + 10 * su - fabsf(sin(t * 5)) * 40 * su};
+        Vector2 feet = {panel.x + panel.width - 120 * su, panel.y + 10 * su - fabs(sin(t * 5)) * 40 * su};
         draw_mascot(feet, c, 1, 170 * su, 0);
     }
 }
@@ -5210,7 +5215,7 @@ void draw_how_to_play()
     DrawLineEx((Vector2){hole.x, hole.y + 14 * su}, (Vector2){hole.x, hole.y - 86 * su}, 4 * su, LIGHTGRAY);
     DrawTriangle((Vector2){hole.x, hole.y - 86 * su}, (Vector2){hole.x, hole.y - 38 * su}, (Vector2){hole.x + 62 * su, hole.y - 62 * su}, RED);
 
-    float pull = 80 * su + 34 * su * fabsf(sin(t * 1.4));
+    float pull = 80 * su + 34 * su * fabs(sin(t * 1.4));
     for (int i = 1; i <= 6; i++)
     {
         float q = (float)i / 6;
@@ -5249,6 +5254,22 @@ void draw_how_to_play()
     DrawText("plus 100 / 250 / 500 for finishing. Your best on each level is kept in scores.txt.", p.x + 280 * su, p.y + 742 * su, 26 * su, LIGHTGRAY);
 }
 
+void draw_developer(Texture2D photo, float centre_x, float y, float size, const char *name)
+{
+    Color colour = GetColor(0x6FE7FFFF);
+    float side = photo.width;
+    if (photo.height < side)
+        side = photo.height;
+    Rectangle source = {(photo.width - side) / 2, (photo.height - side) / 2, side, side};
+    Rectangle dest = {centre_x - size / 2, y, size, size};
+    Rectangle glow = {dest.x - 6 * su, y - 6 * su, size + 12 * su, size + 12 * su};
+    Vector2 no_origin = {0, 0};
+    DrawRectangleRec(glow, Fade(colour, 0.15));
+    DrawTexturePro(photo, source, dest, no_origin, 0, WHITE);
+    DrawRectangleLinesEx(dest, 3 * su, Fade(colour, 0.7));
+    DrawText(name, centre_x - MeasureText(name, 32 * su) / 2, y + size + 16 * su, 32 * su, WHITE);
+}
+
 void draw_credits()
 {
     Rectangle p = draw_page("CREDITS", 1);
@@ -5256,18 +5277,18 @@ void draw_credits()
     draw_mascot((Vector2){p.x + p.width - 230 * su, p.y + 310 * su}, 3, 0, 270 * su, 0);
     DrawText("THE ULTIMATE GOLF", x, p.y + 60 * su, 64 * su, GetColor(0xFFD34DFF));
 
-    DrawText("DEVELOPERS", x, p.y + 180 * su, 32 * su, GetColor(0x6FE7FFFF));
-    DrawText("Abdullah Al Nafi  -  2505093", x, p.y + 230 * su, 38 * su, WHITE);
-    DrawText("Syed Abdul Fahim  -  2505114", x, p.y + 280 * su, 38 * su, WHITE);
+    DrawText("DEVELOPERS", x, p.y + 170 * su, 32 * su, GetColor(0x6FE7FFFF));
+    draw_developer(cat_texture[0], p.x + 410 * su, p.y + 220 * su, 160 * su, "Abdullah Al Nafi  -  2505093");
+    draw_developer(cat_texture[1], p.x + 1030 * su, p.y + 220 * su, 160 * su, "Syed Abdul Fahim  -  2505114");
 
-    DrawText("SPRITES AND ARTWORK", x, p.y + 370 * su, 32 * su, GetColor(0x6FE7FFFF));
-    DrawText("All sprites and textures in this game were generated with AI.", x, p.y + 420 * su, 30 * su, LIGHTGRAY);
+    DrawText("SPRITES AND ARTWORK", x, p.y + 465 * su, 32 * su, GetColor(0x6FE7FFFF));
+    DrawText("All sprites and textures in this game were generated with AI.", x, p.y + 510 * su, 30 * su, LIGHTGRAY);
 
-    DrawText("SOUND AND MUSIC", x, p.y + 500 * su, 32 * su, GetColor(0x6FE7FFFF));
-    DrawText("All sound effects and music tracks are from freesound.org.", x, p.y + 550 * su, 30 * su, LIGHTGRAY);
+    DrawText("SOUND AND MUSIC", x, p.y + 575 * su, 32 * su, GetColor(0x6FE7FFFF));
+    DrawText("All sound effects and music tracks are from freesound.org.", x, p.y + 620 * su, 30 * su, LIGHTGRAY);
 
-    DrawText("SPECIAL THANKS", x, p.y + 630 * su, 32 * su, GetColor(0x6FE7FFFF));
-    DrawText("raylib, by Ramon Santamaria and its contributors - the library this game is built on.", x, p.y + 680 * su, 30 * su, LIGHTGRAY);
+    DrawText("SPECIAL THANKS", x, p.y + 685 * su, 32 * su, GetColor(0x6FE7FFFF));
+    DrawText("raylib, by Ramon Santamaria and its contributors - the library this game is built on.", x, p.y + 730 * su, 30 * su, LIGHTGRAY);
 }
 
 void draw_leaderboard()
@@ -5516,7 +5537,7 @@ float intro_hop(float t)
         float hops = 2;
         if (part == 2)
             hops = 1;
-        return fabsf(sin((t - part * 1.6) / 1.6 * hops * PI));
+        return fabs(sin((t - part * 1.6) / 1.6 * hops * PI));
     }
     float landing = (t - 3 * 1.6) / 0.8;
     if (landing > 1)
@@ -5762,6 +5783,10 @@ int main()
     l4_start(screen_width, screen_height);
     mascot_texture = LoadTexture("assets/intro/intro_ball.png");
     SetTextureFilter(mascot_texture, TEXTURE_FILTER_BILINEAR);
+    cat_texture[0] = LoadTexture("assets/abdullah.png");
+    cat_texture[1] = LoadTexture("assets/fahim.png");
+    for (int i = 0; i < 2; i++)
+        SetTextureFilter(cat_texture[i], TEXTURE_FILTER_BILINEAR);
     for (int i = 0; i < 4; i++)
         card_texture[i] = LoadRenderTexture(screen_width, screen_height);
     InitAudioDevice();
@@ -5980,6 +6005,8 @@ int main()
     for (int i = 0; i < 4; i++)
         UnloadRenderTexture(card_texture[i]);
     UnloadTexture(mascot_texture);
+    for (int i = 0; i < 2; i++)
+        UnloadTexture(cat_texture[i]);
     l2_unload();
     l3_unload();
     l4_unload();
