@@ -4804,6 +4804,7 @@ int current_difficulty = 1;
 
 //intro: the ball mascot hops through the 4 worlds (1.6s each), then the title drops in
 Texture2D mascot_texture;
+Texture2D developer_photo[2];     //the two faces on the credits page
 float intro_time = 0;
 
 //menu: 4 live level cards, then bot / chad / goat
@@ -5614,25 +5615,42 @@ void draw_how_to_play()
 }
 
 
+//a photo of any shape, drawn as a square: the source rectangle takes the middle of it
+void draw_developer(Texture2D photo, float centre_x, float y, float size, const char *name)
+{
+    Color colour = GetColor(0x6FE7FFFF);
+    float side = photo.width;
+    if (photo.height<side) side = photo.height;
+    Rectangle source = {(photo.width-side)/2,(photo.height-side)/2,side,side};
+    Rectangle dest = {centre_x-size/2,y,size,size};
+    Rectangle glow = {dest.x-6*su,y-6*su,size+12*su,size+12*su};
+    Vector2 no_origin = {0,0};
+    DrawRectangleRec(glow,Fade(colour,0.15));
+    DrawTexturePro(photo,source,dest,no_origin,0,WHITE);
+    DrawRectangleLinesEx(dest,3*su,Fade(colour,0.7));
+    DrawText(name,centre_x-MeasureText(name,32*su)/2,y+size+16*su,32*su,WHITE);
+}
+
+
 void draw_credits()
 {
     Rectangle p = draw_page("CREDITS",1);
     float x = p.x+100*su;
-    draw_mascot((Vector2){p.x+p.width-230*su,p.y+310*su},3,0,270*su,0);
+    draw_mascot((Vector2){p.x+p.width-150*su,p.y+195*su},3,0,180*su,0);
     DrawText("THE ULTIMATE GOLF",x,p.y+60*su,64*su,GetColor(0xFFD34DFF));
 
-    DrawText("DEVELOPERS",x,p.y+180*su,32*su,GetColor(0x6FE7FFFF));
-    DrawText("Abdullah Al Nafi  -  2505093",x,p.y+230*su,38*su,WHITE);
-    DrawText("Syed Abdul Fahim  -  2505114",x,p.y+280*su,38*su,WHITE);
+    DrawText("DEVELOPERS",x,p.y+170*su,32*su,GetColor(0x6FE7FFFF));
+    draw_developer(developer_photo[0],p.x+410*su,p.y+220*su,160*su,"Abdullah Al Nafi  -  2505093");
+    draw_developer(developer_photo[1],p.x+1030*su,p.y+220*su,160*su,"Syed Abdul Fahim  -  2505114");
 
-    DrawText("SPRITES AND ARTWORK",x,p.y+370*su,32*su,GetColor(0x6FE7FFFF));
-    DrawText("All sprites and textures in this game were generated with AI.",x,p.y+420*su,30*su,LIGHTGRAY);
+    DrawText("SPRITES AND ARTWORK",x,p.y+465*su,32*su,GetColor(0x6FE7FFFF));
+    DrawText("All sprites and textures in this game were generated with AI.",x,p.y+510*su,30*su,LIGHTGRAY);
 
-    DrawText("SOUND AND MUSIC",x,p.y+500*su,32*su,GetColor(0x6FE7FFFF));
-    DrawText("All sound effects and music tracks are from freesound.org.",x,p.y+550*su,30*su,LIGHTGRAY);
+    DrawText("SOUND AND MUSIC",x,p.y+575*su,32*su,GetColor(0x6FE7FFFF));
+    DrawText("All sound effects and music tracks are from freesound.org.",x,p.y+620*su,30*su,LIGHTGRAY);
 
-    DrawText("SPECIAL THANKS",x,p.y+630*su,32*su,GetColor(0x6FE7FFFF));
-    DrawText("raylib, by Ramon Santamaria and its contributors - the library this game is built on.",x,p.y+680*su,30*su,LIGHTGRAY);
+    DrawText("SPECIAL THANKS",x,p.y+685*su,32*su,GetColor(0x6FE7FFFF));
+    DrawText("raylib, by Ramon Santamaria and its contributors - the library this game is built on.",x,p.y+730*su,30*su,LIGHTGRAY);
 
 
 }
@@ -6438,6 +6456,9 @@ int main()
     l4_start(screen_width,screen_height);
     mascot_texture = LoadTexture("assets/intro/intro_ball.png");
     SetTextureFilter(mascot_texture,TEXTURE_FILTER_BILINEAR);
+    developer_photo[0] = LoadTexture("assets/abdullah.png");
+    developer_photo[1] = LoadTexture("assets/fahim.png");
+    for (int i=0; i<2; i++) SetTextureFilter(developer_photo[i],TEXTURE_FILTER_BILINEAR);
     for (int i=0; i<4; i++) card_texture[i] = LoadRenderTexture(screen_width,screen_height);
     InitAudioDevice();
     load_sounds();
@@ -6592,27 +6613,14 @@ int main()
             }
         }
 
-        //menu music in the intro and menu, the level's ambience while playing, the fan hum in level 1
-        //intro: only the intro track, menu: the menu music, playing: the level's ambience
-        if (game_mode==0)
+        //music only belongs to a level: the intro, the menu and the pages are quiet
+        if (game_mode==2 || game_mode==3) play_music(level);
+        else if (music_playing>=0)
         {
-            if (music_playing>=0)
-            {
-                StopMusicStream(music[music_playing]);
-                StopMusicStream(music[5]);
-                music_playing = -1;
-            }
+            StopMusicStream(music[music_playing]);
+            StopMusicStream(music[5]);
+            music_playing = -1;
         }
-        else if (game_mode==2 || game_mode==3) play_music(level);
-        else play_music(0);
-
-        //the extra intro track plays on top, only while the intro is on
-        if (game_mode==0)
-        {
-            if (IsMusicStreamPlaying(music[6])==0) PlayMusicStream(music[6]);
-            UpdateMusicStream(music[6]);
-        }
-        else if (IsMusicStreamPlaying(music[6])) StopMusicStream(music[6]);
         update_music();
         if (game_mode==2 && level==1)
         {
@@ -6646,6 +6654,7 @@ int main()
     CloseAudioDevice();
     for (int i=0; i<4; i++) UnloadRenderTexture(card_texture[i]);
     UnloadTexture(mascot_texture);
+    for (int i=0; i<2; i++) UnloadTexture(developer_photo[i]);
     l2_unload();
     l3_unload();
     l4_unload();
