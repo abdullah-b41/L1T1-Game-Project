@@ -134,6 +134,11 @@ This repository is prepared for submission according to the project requirements
 - This detailed README with build, dependency, and setup instructions
 - No executable or compiled object files
 
-## Author
+## Credits
+
+### Group Members
+
+- **2505093 — Abdullah Al Nafi**
+- **2505114 — Syed Abdul Fahim**
 
 BUET CSE — CSE 102 Game Project
